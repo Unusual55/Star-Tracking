@@ -1,0 +1,2 @@
+Name, X, Y, Radius, Brightness
+0, 174, 58, 22, 0.7843137254901961
