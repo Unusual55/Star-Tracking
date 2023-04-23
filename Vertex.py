@@ -48,7 +48,7 @@ class Vertex:
         return False
 
     def get_text_format(self):
-        return f'{self.__name}, {self.__x}, {self.__y}, {self.__radius}, {self.__brightness}'
+        return f'{self.__x}, {self.__y}, {self.__radius}, {self.__brightness}'
 
     def __hash__(self):
         return hash(str(self))

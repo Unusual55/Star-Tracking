@@ -21,7 +21,7 @@ class Triangle:
     In this function we will check if two triangles are similar according to the angles
     """
 
-    def __is_similar(self, other, eps, delta):
+    def is_similar(self, other, eps, delta):
 
         ab1 = Edge(self.__a, self.__b)
         bc1 = Edge(self.__b, self.__c)
