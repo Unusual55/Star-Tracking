@@ -2,7 +2,7 @@ import cv2
 def denoise(image_name, img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
     # plt.subplot(212), plt.title("Original image"), plt.imshow(img)
 
@@ -12,7 +12,7 @@ def denoise(image_name, img):
     thresh, thresh_img = cv2.threshold(img, 200, 255, 0, cv2.THRESH_BINARY)
 
     # erode the image to *enlarge* black blobs
-    erode = cv2.erode(thresh_img, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1)))
+    erode = cv2.erode(thresh_img, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
 
     # fill in the black blobs that are not surrounded by white:
     _, filled, _, _ = cv2.floodFill(erode, None, (0, 0), 255)

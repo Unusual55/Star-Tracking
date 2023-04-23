@@ -18,7 +18,9 @@ class Graph:
         for star in self.__vertices.values():
             dist = vertex.distance(star)
             radius = star.get_radius()
-            if dist <= 8 * (radius + vertex.get_radius()):
+            if star == vertex:
+                return False
+            if dist <= 3 * (radius + vertex.get_radius()):
                 if vertex.get_radius() > radius:
                     vertex.set_name(star.get_name())
                     self.__vertices[vertex.get_name()] = vertex
