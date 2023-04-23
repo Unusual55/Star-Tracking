@@ -117,12 +117,18 @@ def display_detected_stars(g: Graph):
         fontScale = 1
         color = (255, 0, 255)
         thickness = 2
-        # cv2.putText(img, text, coordinates, font, fontScale, color, thickness, cv2.LINE_AA)
+        cv2.putText(img, text, coordinates, font, fontScale, color, thickness, cv2.LINE_AA)
     cv2.namedWindow("output", cv2.WINDOW_NORMAL)  # Create window with freedom of dimensions
     cv2.imshow("output", img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 
-g1 = detect_stars2('Star_Images/Formatted/IMG_3054.jpg')
-display_detected_stars(g1)
+# path = 'Star_Images/Formatted/'
+# entries = os.listdir(path)
+# for entry in entries:
+#     file_path = path + entry
+#     detect_stars2(file_path)
+
+# g1 = detect_stars2('Star_Images/Formatted/IMG_3054.jpg')
+# display_detected_stars(g1)

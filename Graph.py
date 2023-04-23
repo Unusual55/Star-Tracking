@@ -65,6 +65,9 @@ class Graph:
         p3 = self.__vertices.get(str(p3))
         return p1, p2, p3
 
+    def get_vertice_ids(self):
+        return self.__vertices
+
     def get_coordinates(self):
         X = np.array(-1)
         Y = np.array(-1)

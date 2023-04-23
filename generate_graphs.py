@@ -11,15 +11,41 @@ from Vertex import Vertex
 from writer import write_assignments
 import cv2
 from star_detect import detect_stars2
+from scipy.spatial import KDTree
 
 
-def validate_matchings_with_triangles(matchings, max_iterations=20):
-    '''
-    step1: 
-    '''
-    for _ in range(max_iterations):
-        i, j, r = random.sample(matchings, )
+def getxy(point):
+    if len(point) == 2:
+        x, y = point
+        return x, y
+    if len(point) == 4:
+        x, y, _, _ = point
+        return x, y
     return None
+
+
+def find_k_nearest_neighbors(points, query_point, K=1):
+    # convert the list of points to a numpy array
+    x_, y_, _, _ = query_point
+    for i in range(len(points)):
+        x, y, r, b = points[i]
+        if x == x_ and y == y_:
+            points[i] = (1000000000, 1000000000, r, b)
+            break
+    points = [(x, y) for x, y, _, _ in points]
+    query_point = (x_, y_)
+    points_array = np.array(points)
+
+    # create a KDTree object with the points
+    kdtree = KDTree(points_array[:, :2])  # using only the x and y coordinates
+
+    # find the indices of the K nearest neighbors of the query point
+    distances, indices = kdtree.query([query_point], k=K)
+
+    # retrieve the corresponding points from the original array
+    nearest_neighbors = [points[i] for i in indices[0]]
+
+    return distances, nearest_neighbors
 
 
 def dist_points(xa, ya, xb, yb):
@@ -30,8 +56,8 @@ def dist_points(xa, ya, xb, yb):
 
 def get_inliers(g, a, b, dist_thresh=5):
     inliers = []
-    xa, ya, _, _ = a
-    xb, yb, _, _ = b
+    xa, ya = getxy(a)
+    xb, yb = getxy(b)
     m = (yb - ya) / (xb - xa)
     c = ya - m * xa
 
@@ -47,12 +73,12 @@ def get_inliers(g, a, b, dist_thresh=5):
 
 
 def same_point(a, b):
-    xa, ya, _, _ = a
-    xb, yb, _, _ = b
+    xa, ya = getxy(a)
+    xb, yb = getxy(b)
     return xa != xb and ya != yb
 
 
-def valid_triangles(points1, points2, threshold):
+def valid_triangles(points1, points2, threshold, validation_threshold):
     if len(points1) != 3 or len(points2) != 3:
         raise ValueError("can only compare 3 points")
 
@@ -64,9 +90,9 @@ def valid_triangles(points1, points2, threshold):
     if not (same_point(a2, b2) and same_point(a2, c2) and same_point(b2, c2)):
         return False
 
-    x1, y1, _, _ = a1
-    x2, y2, _, _ = b1
-    x3, y3, _, _ = c1
+    x1, y1 = getxy(a1)
+    x2, y2 = getxy(b1)
+    x3, y3 = getxy(c1)
 
     t1 = Triangle(Vertex(name="a1", x=x1, y=y1, radius=0, brightness=0),
                   Vertex(name="b1", x=x2, y=y2, radius=0, brightness=0),
@@ -79,9 +105,9 @@ def valid_triangles(points1, points2, threshold):
     if not (m1 != m2 != m3):
         return False
 
-    x1, y1, _, _ = a2
-    x2, y2, _, _ = b2
-    x3, y3, _, _ = c2
+    x1, y1 = getxy(a2)
+    x2, y2 = getxy(b2)
+    x3, y3 = getxy(c2)
 
     m1 = (y2 - y1) / (x2 - x1)
     m2 = (y3 - y2) / (x3 - x2)
@@ -94,7 +120,7 @@ def valid_triangles(points1, points2, threshold):
                   Vertex(name="b2", x=x2, y=y2, radius=0, brightness=0),
                   Vertex(name="c2", x=x3, y=y3, radius=0, brightness=0))
 
-    return t1.is_similar(other=t2, eps=180, delta=threshold)
+    return t1.is_similar(other=t2, eps=threshold, delta=validation_threshold)
 
 
 def calc_affine_transformation_matrix(src, dest):
@@ -170,7 +196,7 @@ def find_similar_triangles(src, dest):
 
 
 def match_stars_ransac(G1, G2, dist_thresh=5, inlier_thresh=0.5, max_iterations=1000, validation_threshold=25,
-                       triangle_sim_threshold=0.05):
+                       triangle_sim_threshold=0.1):
     '''
     -   G1 and G2 are the input graphs, with each vertex represented as a tuple (x,y,r,b)
     -   dist_thresh is the distance threshold used to determine inliers
@@ -192,21 +218,16 @@ def match_stars_ransac(G1, G2, dist_thresh=5, inlier_thresh=0.5, max_iterations=
     # Initialize the set of best inliers found so far
     best_matchings = set()
     transformed_set = None
-
-    fit1, inliers1 = ransac_line_fit(G1, threshold=dist_thresh, max_iterations=max_iterations,
-                                     inlier_thresh=inlier_thresh)
-    fit2, inliers2 = ransac_line_fit(G2, threshold=dist_thresh, max_iterations=max_iterations,
-                                     inlier_thresh=inlier_thresh)
-
-    n1 = len(inliers1)
-    n2 = len(inliers2)
+    best_score = 0
 
     for _ in range(max_iterations):
         # Compute the transformation required to match the pair of vertices
-        to_sample = 3  # min(len(inliers1), len(inliers2))
-        tpoints1 = random.sample(inliers1, to_sample)
-        tpoints2 = random.sample(inliers2, to_sample)
-        if not valid_triangles(tpoints1, tpoints2, threshold=triangle_sim_threshold):
+        local_score = 0
+        to_sample = 3
+        tpoints1 = random.sample(G1, to_sample)
+        tpoints2 = random.sample(G2, to_sample)
+
+        if not valid_triangles(tpoints1, tpoints2, triangle_sim_threshold, validation_threshold):
             continue
 
         T = calc_affine_transformation_matrix(src=tpoints1, dest=tpoints2)
@@ -217,22 +238,99 @@ def match_stars_ransac(G1, G2, dist_thresh=5, inlier_thresh=0.5, max_iterations=
         pt1 = np.hstack([pt, np.ones((len(pt), 1))])
         G1_transformed = np.dot(pt1, T.T)[:, :2]
 
+        dist_dict = dict()
         matchings = []
         for i in range(len(G1_transformed)):
             for j in range(len(G2)):
                 a1, b1 = G1_transformed[i]
+                a1 = round(a1)
+                b1 = round(b1)
                 a2, b2, _, _ = G2[j]
-                if dist_points(a1, b1, a2, b2) <= validation_threshold:
+                a2 = round(a2)
+                b2 = round(b2)
+                dist = dist_points(a1, b1, a2, b2)
+                if dist <= validation_threshold:
                     a1, b1, _, _ = G1[i]
-                    matchings.append(((a1, b1), (a2, b2)))
+                    if dist_dict.get(str([a1, b1])) is None:
+                        dist_dict[str([a1, b1])] = ((a1, b1), (a2, b2), dist)
+                    if dist_dict[str([a1, b1])][2] > dist:
+                        dist_dict[str([a1, b1])] = ((a1, b1), (a2, b2), dist)
+                    # matchings.append(((a1, b1), (a2, b2)))
+        for value in dist_dict.values():
+            matchings.append((value[0], value[1]))
+            local_score = validation_threshold - value[2]
 
-        if len(matchings) <= to_sample:
-            continue
-
-        # Update the best set of inliers if necessary
-        if len(matchings) > len(best_matchings):
+        # Update the best set of inliers if necessary based on the score
+        if local_score > best_score:
             best_matchings = matchings
             transformed_set = G1_transformed
+            best_score = local_score
+
+    # Return the set of best inliers found
+    return best_matchings, transformed_set
+
+
+def match_start_brute(G1, G2, dist_threshold=1000, tsim_threshold=5, validation_threshold=0.05):
+    '''
+    '''
+    gt1 = list(itertools.combinations(G1, 3))
+    gt2 = list(itertools.combinations(G2, 3))
+
+    best_matchings = set()
+    transformed_set = None
+    best_score = 0
+    for tri1 in gt1:
+        for tri2 in gt2:
+            if not valid_triangles(tri1, tri2, tsim_threshold, validation_threshold):
+                continue
+            local_score = 0
+            T = calc_affine_transformation_matrix(src=tri1, dest=tri2)
+
+            pt = [(x, y) for x, y, _, _ in G1]
+            # Convert the point set to a NumPy array
+            pt = np.array(pt)
+            pt1 = np.hstack([pt, np.ones((len(pt), 1))])
+            G1_transformed = np.dot(pt1, T.T)[:, :2]
+
+            dist_dict = dict()
+            matchings = []
+            for i in range(len(G1_transformed)):
+                for j in range(len(G2)):
+                    a1, b1 = G1_transformed[i]
+                    a1 = round(a1)
+                    b1 = round(b1)
+                    a2, b2, _, _ = G2[j]
+                    a2 = round(a2)
+                    b2 = round(b2)
+                    dist = dist_points(a1, b1, a2, b2)
+                    if dist <= dist_threshold:
+                        a1, b1, _, _ = G1[i]
+                        if dist_dict.get(str([a1, b1])) is None:
+                            dist_dict[str([a1, b1])] = ((a1, b1), (a2, b2), dist)
+                        if dist_dict[str([a1, b1])][2] > dist:
+                            contained = False
+                            for value in dist_dict.values():
+                                if value[1][0] == a2 and value[1][1] == b2:
+                                    contained = True
+                                    break
+                            if not contained:
+                                dist_dict[str([a1, b1])] = ((a1, b1), (a2, b2), dist)
+
+
+                        # matchings.append(((a1, b1), (a2, b2)))
+            for value in dist_dict.values():
+                matchings.append((value[0], value[1]))
+                local_score += dist_threshold - value[2]
+
+            # if len(matchings) <= 3:
+            #     continue
+
+            # Update the best set of inliers if necessary
+            # if len(matchings) > len(best_matchings):
+            if local_score > best_score:
+                best_matchings = matchings
+                transformed_set = G1_transformed
+                best_score = local_score
 
     # Return the set of best inliers found
     return best_matchings, transformed_set
@@ -261,19 +359,15 @@ def load_graph(image_path, graph_path):
             rows = data.split('\n')
             for i in range(1, len(rows)):
                 prop = rows[i].split(', ')
-                idx = prop[0]
-                x = int(prop[1])
-                y = int(prop[2])
-                r = int(prop[3])
-                b = float(prop[4])
+                idx = i - 1
+                x = int(prop[0])
+                y = int(prop[1])
+                b = int(prop[2])
+                r = float(prop[3])
                 from Vertex import Vertex
                 v = Vertex(idx, x, y, r, b)
                 g.add_star(v)
     return g
-
-
-def calc_avg_dist_neighbour(graph):
-    pass  # TODO
 
 
 def convert_to_points(graph: Graph):
@@ -287,6 +381,7 @@ def convert_to_points(graph: Graph):
 
 
 def main():
+
     '''
     Assumptions:
 
@@ -299,9 +394,9 @@ def main():
     '''
     print("\n\tCompiled, Loading two graphs/images to compare\n")
 
-    graph_path = 'Star-Tracking-main/star_data/'
-    img_path1 = 'Star-Tracking-main/Star_images/Formatted/IMG_3053.jpg'
-    img_path2 = 'Star-Tracking-main/Star_images/Formatted/IMG_3054.jpg'
+    graph_path = 'star_data/'
+    img_path1 = 'Star_images/Formatted/IMG_3053.jpg'
+    img_path2 = 'Star_images/Formatted/fr1.jpg'
 
     graph1 = load_graph(image_path=img_path1, graph_path=graph_path)
     if len(graph1) == 0:
@@ -318,15 +413,31 @@ def main():
     points1 = convert_to_points(graph1)
     points2 = convert_to_points(graph2)
 
+    if len(points1) > len(points2):
+        tmp = points1
+        points1 = points2
+        points2 = points1
+        x1_array, y1_array = graph2.get_coordinates()
+        x2_array, y2_array = graph1.get_coordinates()
+
     inlier_thresh = 1
-    dist_thresh = 1300  # for ransac line fit
     max_iterations = 10000
-    validation_threshold = 50  # after affine transform, distance between suspected matches
-    triangle_sim_threshold = 0.5
-    matchings, G1_transformed = match_stars_ransac(G1=points1, G2=points2, inlier_thresh=inlier_thresh,
-                                                   dist_thresh=dist_thresh, max_iterations=max_iterations,
-                                                   validation_threshold=validation_threshold,
-                                                   triangle_sim_threshold=triangle_sim_threshold)
+
+    dist_thresh = 1000
+    triangle_sim_threshold = 5
+    validation_threshold = 0.2
+
+    # matchings, G1_transformed = match_stars_ransac(G1=points1, G2=points2, inlier_thresh=inlier_thresh,
+    #                                                dist_thresh=dist_thresh, max_iterations=max_iterations,
+    #                                                validation_threshold=validation_threshold,
+    #                                                triangle_sim_threshold=triangle_sim_threshold)
+
+    matchings, G1_transformed = match_start_brute(points1, points2, dist_threshold=dist_thresh,
+                                                  tsim_threshold=triangle_sim_threshold,
+                                                  validation_threshold=validation_threshold)
+    if G1_transformed is None:
+        print("no matches found :( ")
+        return
 
     x_t = [x for x, _ in G1_transformed]
     y_t = [y for _, y in G1_transformed]
@@ -357,6 +468,8 @@ def main():
     plt.grid()
 
     plt.show()
+    for match in matchings:
+        print(match)
 
 
 if __name__ == "__main__":
